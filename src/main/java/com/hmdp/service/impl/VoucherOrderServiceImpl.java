@@ -7,8 +7,11 @@ import com.hmdp.entity.VoucherOrder;
 import com.hmdp.mapper.VoucherOrderMapper;
 import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
+import com.hmdp.service.IVoucherService;
 import com.hmdp.utils.RedisidWorker;
 import com.hmdp.utils.UserHolder;
+import org.jetbrains.annotations.NotNull;
+import org.springframework.aop.framework.AopContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,13 +63,31 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             //扣减库存
             return Result.fail("库存不足！");
         }
+
+        Long userId = UserHolder.getUser().getId();
+        synchronized (userId.toString().intern()) {
+            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
+            return proxy.createVoucherOrder(voucherId);
+        }
+    }
+
+    @Transactional
+    public Result createVoucherOrder(Long voucherId) {
+        // 5.一人一单逻辑
+        // 5.1.用户id
+        Long userId = UserHolder.getUser().getId();
+        long count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
+        // 5.2.判断是否存在
+        if (count > 0) {
+            // 用户已经购买过了
+            return Result.fail("用户已经购买过一次！");
+        }
         //6.创建订单
         VoucherOrder voucherOrder = new VoucherOrder();
         // 6.1.订单id
         long orderId = redisIdWorker.nextId("order");
         voucherOrder.setId(orderId);
         // 6.2.用户id
-        Long userId = UserHolder.getUser().getId();
         voucherOrder.setUserId(userId);
         // 6.3.代金券id
         voucherOrder.setVoucherId(voucherId);
